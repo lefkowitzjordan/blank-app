@@ -269,17 +269,13 @@ button[kind="header"]:hover {
 
 def download_tif_if_needed():
     if not os.path.exists(TIF_PATH):
-        session = requests.Session()
-        url = f"https://drive.google.com/uc?export=download&id={GDRIVE_FILE_ID}"
-        r = session.get(url, stream=True)
-        for key, value in r.cookies.items():
-            if key.startswith("download_warning"):
-                r = session.get(url + "&confirm=" + value, stream=True)
-        with open(TIF_PATH, "wb") as f:
-            for chunk in r.iter_content(32768):
-                if chunk:
-                    f.write(chunk)
-
+        from huggingface_hub import hf_hub_download
+        hf_hub_download(
+            repo_id="jordanl2/ndvi-data",
+            filename="NDVI_california.tif",
+            repo_type="dataset",
+            local_dir="/tmp"
+        )
 
 @st.cache_resource
 def open_raster():
