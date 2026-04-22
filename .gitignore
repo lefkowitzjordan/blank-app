@@ -8,3 +8,5 @@ data.h5
 ndvi_clean/
 ndvi_tiles/
 ndvi_files.txt
+
+NDVI_california.tif
