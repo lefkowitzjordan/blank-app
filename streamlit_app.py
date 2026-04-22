@@ -4,7 +4,6 @@ from pyproj import Transformer
 import pandas as pd
 import pydeck as pdk
 import os
-import requests
 
 APP_TITLE = "ClearLand"
 APP_SUBTITLE = "Environmental insights for informed health decisions"
@@ -13,7 +12,6 @@ st.set_page_config(page_title="Cancer Risk Factor Search", layout="wide")
 
 TIF_PATH = "/tmp/NDVI_california.tif"
 CALENV_PATH = "CalEnvScreen.xlsx"
-GDRIVE_FILE_ID = "1DT6BEr3buUEUtfU6xqlwWjjf0d4-2sqQ"
 
 st.markdown("""
 <style>
@@ -274,8 +272,9 @@ def download_tif_if_needed():
             repo_id="jordanl2/ndvi-data",
             filename="NDVI_california.tif",
             repo_type="dataset",
-            local_dir="/tmp"
+            local_dir="/tmp",
         )
+
 
 @st.cache_resource
 def open_raster():
@@ -313,16 +312,92 @@ def render_banner(title: str, desc: str):
     )
 
 
+def compute_location_data(lat: float, lon: float):
+    calenv_df = load_calenviro(CALENV_PATH)
+    src = open_raster()
+    to_utm = Transformer.from_crs("EPSG:4326", src.crs, always_xy=True)
+    to_wgs84 = Transformer.from_crs(src.crs, "EPSG:4326", always_xy=True)
+
+    x, y = to_utm.transform(lon, lat)
+    sampled = next(src.sample([(x, y)], masked=True))[0]
+
+    row, col = src.index(x, y)
+    pixel_x, pixel_y = src.xy(row, col)
+    pixel_lon, pixel_lat = to_wgs84.transform(pixel_x, pixel_y)
+
+    ndvi_value = None
+    if not getattr(sampled, "mask", False):
+        ndvi_value = float(sampled)
+
+    tract = find_nearest_tract(calenv_df, lat, lon)
+    ozone = fmt3(tract["Ozone"])
+    ozone_pctl = fmt3(tract["Ozone Pctl"])
+    pm25 = fmt3(tract["PM2.5"])
+    pm25_pctl = fmt3(tract["PM2.5 Pctl"])
+
+    return {
+        "lat": lat,
+        "lon": lon,
+        "pixel_lat": pixel_lat,
+        "pixel_lon": pixel_lon,
+        "ndvi_value": ndvi_value,
+        "ozone": ozone,
+        "ozone_pctl": ozone_pctl,
+        "pm25": pm25,
+        "pm25_pctl": pm25_pctl,
+    }
+
+
+def store_last_result(data: dict):
+    st.session_state["last_result"] = data
+    st.session_state["last_latlon_text"] = f"{data['lat']:.5f}, {data['lon']:.5f}"
+
+
+def render_ndvi_output_card(data: dict):
+    ndvi_value = data.get("ndvi_value")
+    if ndvi_value is None:
+        ndvi_inner = '<div class="ndvi-na">No data available for this location</div>'
+    else:
+        ndvi_inner = '<div class="ndvi-score">' + fmt3(ndvi_value) + '</div>'
+
+    st.markdown(
+        '<div class="card">'
+        '<div class="card-title">Your NDVI output</div>'
+        + ndvi_inner +
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_air_quality_output_card(data: dict):
+    st.markdown(
+        '<div class="card">'
+        '<div class="card-title">Your air quality output</div>'
+        '<div class="metrics-row">'
+        '<div class="metric-chip chip-sky">'
+        '<div class="metric-label">Ozone (8-hr max)</div>'
+        '<div class="metric-value">' + data["ozone"] + '</div>'
+        '<div class="metric-pctl">ppm &nbsp;&middot;&nbsp; ' + data["ozone_pctl"] + ' percentile</div>'
+        '</div>'
+        '<div class="metric-chip chip-earth">'
+        '<div class="metric-label">PM2.5 (annual mean)</div>'
+        '<div class="metric-value">' + data["pm25"] + '</div>'
+        '<div class="metric-pctl">&#181;g/m&#179; &nbsp;&middot;&nbsp; ' + data["pm25_pctl"] + ' percentile</div>'
+        '</div>'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_home():
     render_banner(
         title="Cancer Risk Factor Search",
-        desc="Enter coordinates to retrieve vegetation, air quality, and environmental risk data for any California location."
+        desc="Enter coordinates to retrieve vegetation, air quality, and environmental risk data for any California location.",
     )
 
-    calenv_df = load_calenviro(CALENV_PATH)
-    src = open_raster()
-    to_utm   = Transformer.from_crs("EPSG:4326", src.crs, always_xy=True)
-    to_wgs84 = Transformer.from_crs(src.crs, "EPSG:4326", always_xy=True)
+    if "last_latlon_text" in st.session_state and "home_latlon_input" not in st.session_state:
+        st.session_state["home_latlon_input"] = st.session_state["last_latlon_text"]
 
     latlon = st.text_input(
         "Latitude, Longitude",
@@ -336,96 +411,61 @@ def render_home():
             lat = float(lat_str.strip())
             lon = float(lon_str.strip())
 
-            x, y = to_utm.transform(lon, lat)
-            sampled = next(src.sample([(x, y)], masked=True))[0]
+            data = compute_location_data(lat, lon)
+            store_last_result(data)
 
-            row, col = src.index(x, y)
-            pixel_x, pixel_y = src.xy(row, col)
-            pixel_lon, pixel_lat = to_wgs84.transform(pixel_x, pixel_y)
-
-            ndvi_value = None
-            if not getattr(sampled, "mask", False):
-                ndvi_value = float(sampled)
-
-            if ndvi_value is None:
-                ndvi_inner = '<div class="ndvi-na">No data available for this location</div>'
-            else:
-                ndvi_inner = (
-                    '<div class="ndvi-score">' + fmt3(ndvi_value) + '</div>'
-                    '<p class="ndvi-sub">Normalized Difference Vegetation Index &nbsp;&middot;&nbsp; &minus;1 to +1 scale</p>'
-                )
-
-            st.markdown(
-                '<div class="card">'
-                '<div class="card-title">🌿 Vegetation Index (NDVI)</div>'
-                + ndvi_inner +
-                '</div>',
-                unsafe_allow_html=True,
-            )
+            render_ndvi_output_card(data)
 
             if st.button("What's NDVI?", key="whats_ndvi_btn"):
                 st.switch_page(ndvi_page)
 
-            tract      = find_nearest_tract(calenv_df, lat, lon)
-            ozone      = fmt3(tract["Ozone"])
-            ozone_pctl = fmt3(tract["Ozone Pctl"])
-            pm25       = fmt3(tract["PM2.5"])
-            pm25_pctl  = fmt3(tract["PM2.5 Pctl"])
+            render_air_quality_output_card(data)
 
-            st.markdown(
-                '<div class="card">'
-                '<div class="card-title">💨 Air Quality</div>'
-                '<div class="metrics-row">'
-                '<div class="metric-chip chip-sky">'
-                '<div class="metric-label">Ozone (8-hr max)</div>'
-                '<div class="metric-value">' + ozone + '</div>'
-                '<div class="metric-pctl">ppm &nbsp;&middot;&nbsp; ' + ozone_pctl + ' percentile</div>'
-                '</div>'
-                '<div class="metric-chip chip-earth">'
-                '<div class="metric-label">PM2.5 (annual mean)</div>'
-                '<div class="metric-value">' + pm25 + '</div>'
-                '<div class="metric-pctl">&#181;g/m&#179; &nbsp;&middot;&nbsp; ' + pm25_pctl + ' percentile</div>'
-                '</div>'
-                '</div>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
+            if st.button("Learn more about air quality", key="learn_more_air_quality_btn"):
+                st.switch_page(air_quality_page)
 
             st.markdown(
                 '<div class="card">'
                 '<div class="card-title">🗺️ Map</div>'
                 '<div class="legend-row">'
                 '<span><span class="legend-dot" style="background:#3a7ca5;"></span>'
-                'Input location (' + f"{lat:.5f}" + ', ' + f"{lon:.5f}" + ')</span>'
+                'Input location (' + f"{data['lat']:.5f}" + ', ' + f"{data['lon']:.5f}" + ')</span>'
                 '<span><span class="legend-dot" style="background:#c0392b;"></span>'
-                'Pixel center (' + f"{pixel_lat:.5f}" + ', ' + f"{pixel_lon:.5f}" + ')</span>'
+                'Pixel center (' + f"{data['pixel_lat']:.5f}" + ', ' + f"{data['pixel_lon']:.5f}" + ')</span>'
                 '</div>'
                 '</div>',
                 unsafe_allow_html=True,
             )
 
             map_df = pd.DataFrame([
-                {"lat": lat,       "lon": lon,       "point_type": "Input location"},
-                {"lat": pixel_lat, "lon": pixel_lon, "point_type": "Pixel center"},
+                {"lat": data["lat"], "lon": data["lon"], "point_type": "Input location"},
+                {"lat": data["pixel_lat"], "lon": data["pixel_lon"], "point_type": "Pixel center"},
             ])
 
             st.pydeck_chart(pdk.Deck(
                 layers=[
-                    pdk.Layer("ScatterplotLayer",
-                              data=map_df[map_df["point_type"] == "Input location"],
-                              get_position="[lon, lat]",
-                              get_fill_color=[58, 124, 165, 210],
-                              get_radius=80, pickable=True),
-                    pdk.Layer("ScatterplotLayer",
-                              data=map_df[map_df["point_type"] == "Pixel center"],
-                              get_position="[lon, lat]",
-                              get_fill_color=[192, 57, 43, 210],
-                              get_radius=80, pickable=True),
+                    pdk.Layer(
+                        "ScatterplotLayer",
+                        data=map_df[map_df["point_type"] == "Input location"],
+                        get_position="[lon, lat]",
+                        get_fill_color=[58, 124, 165, 210],
+                        get_radius=80,
+                        pickable=True,
+                    ),
+                    pdk.Layer(
+                        "ScatterplotLayer",
+                        data=map_df[map_df["point_type"] == "Pixel center"],
+                        get_position="[lon, lat]",
+                        get_fill_color=[192, 57, 43, 210],
+                        get_radius=80,
+                        pickable=True,
+                    ),
                 ],
                 initial_view_state=pdk.ViewState(
-                    latitude=(lat + pixel_lat) / 2,
-                    longitude=(lon + pixel_lon) / 2,
-                    zoom=11, pitch=0,
+                    latitude=(data["lat"] + data["pixel_lat"]) / 2,
+                    longitude=(data["lon"] + data["pixel_lon"]) / 2,
+                    zoom=11,
+                    pitch=0,
                 ),
                 tooltip={"text": "{point_type}\n({lat}, {lon})"},
                 map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
@@ -438,8 +478,13 @@ def render_home():
 def render_ndvi():
     render_banner(
         title="What is NDVI?",
-        desc="Understanding the Normalized Difference Vegetation Index"
+        desc="Understanding the Normalized Difference Vegetation Index",
     )
+
+    if "last_result" in st.session_state:
+        render_ndvi_output_card(st.session_state["last_result"])
+    else:
+        st.info("Enter coordinates on the Home page to see your NDVI output here.")
 
     st.markdown(
         '<div class="card">'
@@ -458,31 +503,21 @@ def render_ndvi():
         '<div class="card-title">📊 Understanding NDVI Values</div>'
         '<p style="font-size:0.88rem;color:#6b7c6d;margin:0 0 0.85rem 0;">NDVI values range from &minus;1 to 1:</p>'
         '<div style="display:flex;flex-direction:column;gap:0.6rem;">'
-
-        '<div style="display:flex;align-items:flex-start;gap:0.85rem;padding:0.75rem 1rem;'
-        'background:#e6f1f8;border-radius:8px;border-left:4px solid #3a7ca5;">'
+        '<div style="display:flex;align-items:flex-start;gap:0.85rem;padding:0.75rem 1rem;background:#e6f1f8;border-radius:8px;border-left:4px solid #3a7ca5;">'
         '<span style="font-size:1.1rem;">💧</span>'
-        '<div><div style="font-size:0.78rem;font-weight:600;color:#3a7ca5;text-transform:uppercase;'
-        'letter-spacing:0.07em;margin-bottom:0.2rem;">Negative values</div>'
+        '<div><div style="font-size:0.78rem;font-weight:600;color:#3a7ca5;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.2rem;">Negative values</div>'
         '<div style="font-size:0.9rem;color:#1e2d1f;">Water (bodies of water, clouds, or snow)</div></div>'
         '</div>'
-
-        '<div style="display:flex;align-items:flex-start;gap:0.85rem;padding:0.75rem 1rem;'
-        'background:#f5efe6;border-radius:8px;border-left:4px solid #8b6f47;">'
+        '<div style="display:flex;align-items:flex-start;gap:0.85rem;padding:0.75rem 1rem;background:#f5efe6;border-radius:8px;border-left:4px solid #8b6f47;">'
         '<span style="font-size:1.1rem;">🏜️</span>'
-        '<div><div style="font-size:0.78rem;font-weight:600;color:#8b6f47;text-transform:uppercase;'
-        'letter-spacing:0.07em;margin-bottom:0.2rem;">Values near zero</div>'
+        '<div><div style="font-size:0.78rem;font-weight:600;color:#8b6f47;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.2rem;">Values near zero</div>'
         '<div style="font-size:0.9rem;color:#1e2d1f;">Limited vegetation, bare soil</div></div>'
         '</div>'
-
-        '<div style="display:flex;align-items:flex-start;gap:0.85rem;padding:0.75rem 1rem;'
-        'background:#e8f0eb;border-radius:8px;border-left:4px solid #4a7c59;">'
+        '<div style="display:flex;align-items:flex-start;gap:0.85rem;padding:0.75rem 1rem;background:#e8f0eb;border-radius:8px;border-left:4px solid #4a7c59;">'
         '<span style="font-size:1.1rem;">🌿</span>'
-        '<div><div style="font-size:0.78rem;font-weight:600;color:#4a7c59;text-transform:uppercase;'
-        'letter-spacing:0.07em;margin-bottom:0.2rem;">Positive values</div>'
+        '<div><div style="font-size:0.78rem;font-weight:600;color:#4a7c59;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.2rem;">Positive values</div>'
         '<div style="font-size:0.9rem;color:#1e2d1f;">Lots of healthy vegetation</div></div>'
         '</div>'
-
         '</div>'
         '</div>',
         unsafe_allow_html=True,
@@ -498,7 +533,7 @@ def render_ndvi():
         '</p>'
         '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0 0 1rem 0;">'
         '<a href="https://www.sciencedirect.com/science/article/pii/S016041202500563X?ref=pdf_download&fr=RR-2&rr=9f0333456b4c2ab4" '
-        'target="_blank" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
         'In one study</a>, patients with prostate cancer who did not undergo surgery had an increased likelihood '
         'of mortality. But patients residing in areas with medium NDVI values (0.217&ndash;0.278) had a '
         'significantly decreased risk of mortality, and patients in areas with high NDVI values (&gt;0.278) '
@@ -519,7 +554,7 @@ def render_ndvi():
         '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">'
         'For more information on NDVI with respect to cancer, we recommend that you '
         '<a href="https://link-springer-com.libproxy2.usc.edu/content/pdf/10.1007/s11356-023-28461-5.pdf" '
-        'target="_blank" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
         'check out this study</a> that summarizes the research that has been done on the topic. '
         'Please note that increased NDVI can by no means completely cure or prevent cancer.'
         '</p>'
@@ -531,8 +566,69 @@ def render_ndvi():
         st.switch_page(home_page)
 
 
+def render_air_quality():
+    render_banner(
+        title="Air Quality",
+        desc="How air quality affects cancer outcomes",
+    )
+
+    if "last_result" in st.session_state:
+        render_air_quality_output_card(st.session_state["last_result"])
+    else:
+        st.info("Enter coordinates on the Home page to see your air quality output here.")
+
+    st.markdown(
+        '<div class="card">'
+        '<div class="card-title">Ozone:</div>'
+        '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">'
+        '<strong>What is Ozone?</strong><br>'
+        'Ozone, also known as O3, is a highly reactive gas molecule made up of 3 oxygen atoms. For comparison, the typical oxygen we breathe is O2, with only two oxygen atoms. As much as extra oxygen may sound good, this molecule is not stable and can negatively affect the body.<br><br>'
+        'Ozone is a natural component of the upper atmosphere, but ground-level ozone, which is the ozone that exists where we live and breathe, is not so natural. Ground-level ozone is formed by reactions in the air with nitrogen oxides, volatile organic compounds, and sunlight. The former two are air pollutants, entering the atmosphere through processes such as industrial facility emissions, gasoline vapor, exhaust from cars and other vehicles, and even electric utilities! Thus, all of these processes can increase ozone in the air we breathe.<br><br>'
+        '<strong>Ozone and Cancer:</strong><br>'
+        'Ozone has drastic effects on cancer outcomes. Lung cancer, cancer, kidney cancer, breast cancer, prostate cancer, and even brain cancer are just a few of the cancers that ozone can affect. It was found that a 10 &micro;g/m3 (or 0.0051 ppm, the metric we use to measure ozone on this site) increase in ozone over a 3-day period can increase cancer mortality by 1%. This effect is especially pronounced during warmer times of the year. Ozone has such a strong effect on cancer mortality that ozone exposure had a significant effect on the likelihood of cancer death up to two days before the death.<br><br>'
+        'To learn more about this, check out <a href="https://onlinelibrary-wiley-com.libproxy1.usc.edu/doi/full/10.1002/ijc.35069" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">this study</a>.'
+        '</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="card">'
+        '<div class="card-title">PM2.5:</div>'
+        '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">'
+        '<strong>What is PM2.5?</strong><br>'
+        'PM2.5 stands for particulate matter 2.5. These are microscopic particles with diameters less than 2.5 &micro;m, which is 30 times smaller than a human hair!<br>'
+        'These particles come from construction sites, sources of fire/smoke, unpaved roads, and chemical reactions in the atmosphere with other air pollutants, like SO2 and NO.<br><br>'
+        '<strong>PM2.5 and Cancer:</strong><br>'
+        'Increased PM2.5 values were found to independently predict a decrease in <a href="https://www-sciencedirect-com.libproxy1.usc.edu/science/article/pii/S0013935126007759?via%3Dihub" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">breast cancer survival</a>. This pattern was tracked to have an increased hazard ratio (an indication of risk) by 1.144 per 1 &micro;g/m3 increase of PM2.5 concentration. These effects are especially pronounced for older patients (65 years or older) as well as those in earlier stages of cancer diagnosis (stages I and II).<br><br>'
+        '<a href="https://pubs-acs-org.libproxy1.usc.edu/doi/pdf/10.1021/acs.est.4c10986" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">Another study</a> found that PM2.5 levels have a drastic effect on the incidence (aka development) of all gastrointestinal (GI) cancers. Specifically, the adjusted hazard ratio for a 1 standard deviation increase in PM2.5 mass is 1.367 for all GI cancers.<br><br>'
+        'The most studied cancer with relation to PM2.5 is lung cancer, as PM2.5 enters the body through the lungs. <a href="https://oce-ovid-com.libproxy1.usc.edu/article/00008469-202211000-00006/PDF" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">One study</a> found that a 10 &micro;g/m3 increase in PM2.5 related to a 7.95% increase in lung cancer mortality, with more significant effects on men and older folks (65 years or older).<br><br>'
+        'To learn more about lung cancer and PM2.5, check out some other relevant studies on:<br>'
+        '- <a href="https://onlinelibrary-wiley-com.libproxy1.usc.edu/doi/full/10.1002/tox.22437" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">How PM2.5 causes lung cancer</a><br>'
+        '- <a href="https://www-sciencedirect-com.libproxy1.usc.edu/science/article/pii/S0048969717317643" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">PM2.5 and male lung cancer</a><br>'
+        '- <a href="https://www.proquest.com/docview/3307473046?accountid=14749&parentSessionId=ebTcDAjx0wcSqNJ6ZPbbZyurTyde0SdRnOJayaC237A%3D&pq-origsite=primo&sourcetype=Scholarly%20Journals" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">PM2.5 and lung cancer ecology</a>'
+        '</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="card" style="background:#e8f0eb;border-color:#4a7c59;">'
+        '<div class="card-title" style="color:#4a7c59;">More resources:</div>'
+        '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">'
+        'To get a more comprehensive understanding of your air quality and environmental health hazards, we encourage you to check out <a href="https://oehha.ca.gov/calenviroscreen/report/calenviroscreen-40" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">CalEnviroScreen 4.0</a>. This is a tool put together by the California Office of Environmental Health Hazard Assessment. It is similar to this tool in that it allows you to look up information for your area, but with some different parameters as our tool focuses on cancer risk, rather than overall air health.'
+        '</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    if st.button("← Back to Home", key="back_to_home_air_quality_btn"):
+        st.switch_page(home_page)
+
+
 home_page = st.Page(render_home, title="Home", default=True)
 ndvi_page = st.Page(render_ndvi, title="NDVI")
+air_quality_page = st.Page(render_air_quality, title="Air Quality")
 
-pg = st.navigation([home_page, ndvi_page])
+pg = st.navigation([home_page, ndvi_page, air_quality_page])
 pg.run()
