@@ -3,14 +3,17 @@ import rasterio
 from pyproj import Transformer
 import pandas as pd
 import pydeck as pdk
+import os
+import requests
 
 APP_TITLE = "ClearLand"
 APP_SUBTITLE = "Environmental insights for informed health decisions"
 
 st.set_page_config(page_title="Cancer Risk Factor Search", layout="wide")
 
-FILE_PATH = "NDVI_california.tif"
+TIF_PATH = "/tmp/NDVI_california.tif"
 CALENV_PATH = "CalEnvScreen.xlsx"
+GDRIVE_FILE_ID = "1DT6BEr3buUEUtfU6xqlwWjjf0d4-2sqQ"
 
 st.markdown("""
 <style>
@@ -38,7 +41,6 @@ html, body, [data-testid="stAppViewContainer"] {
 
 #MainMenu, footer, header { visibility: hidden; }
 
-/* ── Sidebar ── */
 [data-testid="stSidebar"] {
     background: var(--white) !important;
     border-right: 1px solid var(--border) !important;
@@ -66,7 +68,6 @@ html, body, [data-testid="stAppViewContainer"] {
     font-weight: 600 !important;
 }
 
-/* ── Style Streamlit's native collapse/expand toggle button ── */
 [data-testid="stSidebarCollapseButton"] button,
 [data-testid="stSidebarUserContent"] ~ div button,
 button[kind="header"] {
@@ -85,8 +86,6 @@ button[kind="header"]:hover {
     background: var(--sage-lt) !important;
 }
 
-/* Streamlit renders a collapse chevron button in the top-left when sidebar is open,
-   and an expand button when it's closed — style both to match the design */
 [data-testid="collapsedControl"] {
     background: var(--white) !important;
     border: 1px solid var(--border) !important;
@@ -97,13 +96,11 @@ button[kind="header"]:hover {
     color: var(--sage) !important;
 }
 
-/* ── Main content ── */
 [data-testid="stMainBlockContainer"] {
     padding: 0 2rem 3rem 2rem !important;
     max-width: 860px;
 }
 
-/* ── Banner ── */
 .page-header {
     background: linear-gradient(135deg, #2d5a3d 0%, #3a7ca5 100%);
     border-radius: var(--radius);
@@ -142,7 +139,6 @@ button[kind="header"]:hover {
     font-weight: 300;
 }
 
-/* ── Cards ── */
 .card {
     background: var(--white);
     border: 1px solid var(--border);
@@ -160,7 +156,6 @@ button[kind="header"]:hover {
     margin-bottom: 1rem;
 }
 
-/* ── Metric chips ── */
 .metrics-row { display: flex; gap: 1rem; flex-wrap: wrap; }
 .metric-chip {
     flex: 1;
@@ -192,7 +187,6 @@ button[kind="header"]:hover {
 .chip-sky   { border-left: 4px solid var(--sky); }
 .chip-earth { border-left: 4px solid var(--earth); }
 
-/* ── NDVI score ── */
 .ndvi-score {
     font-family: 'DM Serif Display', serif;
     font-size: 3.2rem;
@@ -211,7 +205,6 @@ button[kind="header"]:hover {
     font-style: italic;
 }
 
-/* ── Map legend ── */
 .legend-row {
     display: flex;
     gap: 1.5rem;
@@ -227,7 +220,6 @@ button[kind="header"]:hover {
     vertical-align: middle;
 }
 
-/* ── Input overrides ── */
 [data-testid="stTextInput"] input {
     border-radius: 8px !important;
     border: 1px solid var(--border) !important;
@@ -250,7 +242,6 @@ button[kind="header"]:hover {
     letter-spacing: 0.07em !important;
 }
 
-/* ── Button overrides ── */
 [data-testid="stButton"] button {
     background: var(--sage) !important;
     color: white !important;
@@ -276,9 +267,24 @@ button[kind="header"]:hover {
 """, unsafe_allow_html=True)
 
 
+def download_tif_if_needed():
+    if not os.path.exists(TIF_PATH):
+        session = requests.Session()
+        url = f"https://drive.google.com/uc?export=download&id={GDRIVE_FILE_ID}"
+        r = session.get(url, stream=True)
+        for key, value in r.cookies.items():
+            if key.startswith("download_warning"):
+                r = session.get(url + "&confirm=" + value, stream=True)
+        with open(TIF_PATH, "wb") as f:
+            for chunk in r.iter_content(32768):
+                if chunk:
+                    f.write(chunk)
+
+
 @st.cache_resource
-def open_raster(path):
-    return rasterio.open(path)
+def open_raster():
+    download_tif_if_needed()
+    return rasterio.open(TIF_PATH)
 
 
 @st.cache_data
@@ -318,7 +324,7 @@ def render_home():
     )
 
     calenv_df = load_calenviro(CALENV_PATH)
-    src = open_raster(FILE_PATH)
+    src = open_raster()
     to_utm   = Transformer.from_crs("EPSG:4326", src.crs, always_xy=True)
     to_wgs84 = Transformer.from_crs(src.crs, "EPSG:4326", always_xy=True)
 
@@ -527,6 +533,7 @@ def render_ndvi():
 
     if st.button("← Back to Home", key="back_to_home_btn"):
         st.switch_page(home_page)
+
 
 home_page = st.Page(render_home, title="Home", default=True)
 ndvi_page = st.Page(render_ndvi, title="NDVI")
