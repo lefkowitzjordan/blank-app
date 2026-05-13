@@ -793,7 +793,7 @@ def render_air_quality():
         unsafe_allow_html=True,
     )
 
-    st.image("PM2_5.jpg", use_container_width=True)
+    st.image("PM2.5.jpg", use_container_width=True)
     st.markdown(
         '<p class="img-caption">'
         '<a href="https://www.epa.gov/pm-pollution/particulate-matter-pm-basics" '
