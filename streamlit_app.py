@@ -580,7 +580,7 @@ def render_home():
             ))
 
         except Exception:
-            st.error("Please enter coordinates in the format: 34.05, -118.25")
+            st.exception(e)
 
     if st.button("📋 Resources", key="resources_from_home_btn"):
         st.switch_page(resources_page)
