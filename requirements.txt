@@ -6,3 +6,4 @@ pyproj
 rasterio
 huggingface_hub
 requests
+numpy

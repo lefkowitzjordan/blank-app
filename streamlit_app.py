@@ -4,6 +4,7 @@ from pyproj import Transformer
 import pandas as pd
 import pydeck as pdk
 import os
+import numpy as np
 
 APP_TITLE = "ClearLand"
 APP_SUBTITLE = "Environmental insights for informed health decisions"
@@ -261,6 +262,34 @@ button[kind="header"]:hover {
     border-radius: var(--radius) !important;
     font-family: 'DM Sans', sans-serif !important;
 }
+
+.img-caption {
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 0.4rem;
+    margin-bottom: 0.5rem;
+}
+.img-caption a {
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.img-caption a:hover {
+    color: var(--sage);
+}
+
+.did-you-know {
+    background: var(--sage-lt);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--sage);
+    border-radius: 8px;
+    padding: 0.85rem 1.1rem;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    color: var(--ink);
+    line-height: 1.6;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -302,14 +331,41 @@ def fmt3(value):
         return str(value)
 
 
-def render_banner(title: str, desc: str):
+def render_banner(title: str, desc: str = ""):
+    desc_html = f'<p>{desc}</p>' if desc else ''
     st.markdown(
         '<div class="page-header">'
         '<h1>' + title + '</h1>'
-        '<p>' + desc + '</p>'
+        + desc_html +
         '</div>',
         unsafe_allow_html=True,
     )
+
+
+@st.cache_data
+def compute_ndvi_stats():
+    """Read the full raster once and return (sorted positive values array, mean)."""
+    download_tif_if_needed()
+    src = rasterio.open(TIF_PATH)
+    data = src.read(1, masked=True)
+    # Keep only valid, positive values
+    valid = data.compressed()
+    positive = valid[valid > 0]
+    mean_val = float(np.mean(positive))
+    sorted_vals = np.sort(positive)
+    return sorted_vals, mean_val
+
+
+def ndvi_percentile(ndvi_value: float) -> float:
+    """Return the percentile (0-100) of ndvi_value among all CA pixels > 0."""
+    sorted_vals, _ = compute_ndvi_stats()
+    pct = float(np.searchsorted(sorted_vals, ndvi_value, side='right')) / len(sorted_vals) * 100
+    return round(pct, 1)
+
+
+def ndvi_state_average() -> float:
+    _, mean_val = compute_ndvi_stats()
+    return round(mean_val, 3)
 
 
 def compute_location_data(lat: float, lon: float):
@@ -326,8 +382,11 @@ def compute_location_data(lat: float, lon: float):
     pixel_lon, pixel_lat = to_wgs84.transform(pixel_x, pixel_y)
 
     ndvi_value = None
+    ndvi_pctl = None
     if not getattr(sampled, "mask", False):
         ndvi_value = float(sampled)
+        if ndvi_value > 0:
+            ndvi_pctl = ndvi_percentile(ndvi_value)
 
     tract = find_nearest_tract(calenv_df, lat, lon)
     ozone = fmt3(tract["Ozone"])
@@ -341,6 +400,7 @@ def compute_location_data(lat: float, lon: float):
         "pixel_lat": pixel_lat,
         "pixel_lon": pixel_lon,
         "ndvi_value": ndvi_value,
+        "ndvi_pctl": ndvi_pctl,
         "ozone": ozone,
         "ozone_pctl": ozone_pctl,
         "pm25": pm25,
@@ -355,10 +415,19 @@ def store_last_result(data: dict):
 
 def render_ndvi_output_card(data: dict):
     ndvi_value = data.get("ndvi_value")
+    ndvi_pctl = data.get("ndvi_pctl")
     if ndvi_value is None:
         ndvi_inner = '<div class="ndvi-na">No data available for this location</div>'
     else:
         ndvi_inner = '<div class="ndvi-score">' + fmt3(ndvi_value) + '</div>'
+        if ndvi_pctl is not None:
+            state_avg = ndvi_state_average()
+            ndvi_inner += (
+                '<div class="ndvi-sub">'
+                f'For context, this is the <strong>{ndvi_pctl}th percentile</strong> for California '
+                f'(areas with NDVI &gt; 0). The state average is <strong>{state_avg}</strong>.'
+                '</div>'
+            )
 
     st.markdown(
         '<div class="card">'
@@ -391,9 +460,44 @@ def render_air_quality_output_card(data: dict):
 
 
 def render_home():
-    render_banner(
-        title="Cancer Risk Factor Search",
-        desc="Enter coordinates to retrieve vegetation, air quality, and environmental risk data for any California location.",
+    # Header — no subtitle
+    render_banner(title="Cancer Risk Factor Search")
+
+    # ── Introductory text card ──────────────────────────────────────────────
+    st.markdown(
+        '<div class="card">'
+        '<p style="font-size:0.95rem;line-height:1.75;color:#1e2d1f;margin:0 0 1rem 0;">'
+        'Welcome! This Cancer Risk Factor Search tool is designed to help Californians remain informed '
+        'about the environment around them – and how it can affect the likelihood and outcome of cancer development.'
+        '</p>'
+        '<p style="font-size:0.95rem;line-height:1.75;color:#1e2d1f;margin:0 0 1rem 0;">'
+        'California is the most <em>populated</em> state, and one of the most <em>polluted</em> ones too. '
+        'This means a lot of people are having their health affected by their environment. This tool is based on, '
+        'and even pulls data from, existing location-based search tools that provide information about environmental '
+        'exposures like the CalEnviroScreen or the EWG\'s Tap Water Database. However, these tools are more focused '
+        'on providing <em>data</em> about a variety of exposures, while the goal of the Cancer Risk Factor Search '
+        'tool is to take exposure data and provide <em>information</em> about how these relate to a specific health '
+        'outcome: cancer.'
+        '</p>'
+        '<p style="font-size:0.95rem;line-height:1.75;color:#1e2d1f;margin:0;">'
+        'Cancer is the second leading cause of death in the US and is the highest NIH-funded disease area. Because '
+        'of this, there is a lot of research done on cancer, and for good reason too. But most people do not '
+        'understand how the environment around them can relate to cancer in their body, even though modern science '
+        'does. Thus, the goal of this tool is to help break down how people could be getting exposed to carcinogens '
+        '(cancer-causing chemicals) in their day-to-day life, and provide resources to mitigate these effects. '
+        'This tool helps explain these factors, and provides user-specific information about how they exist in '
+        '<em>your</em> life, hoping to make this tool even more helpful.'
+        '</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Coordinate input ────────────────────────────────────────────────────
+    st.markdown(
+        '<p style="font-size:0.875rem;color:#6b7c6d;margin:0 0 0.5rem 0;">'
+        'Enter coordinates to retrieve vegetation, air quality, and environmental risk data for any California location.'
+        '</p>',
+        unsafe_allow_html=True,
     )
 
     if "last_latlon_text" in st.session_state and "home_latlon_input" not in st.session_state:
@@ -474,6 +578,9 @@ def render_home():
         except Exception:
             st.error("Please enter coordinates in the format: 34.05, -118.25")
 
+    if st.button("📋 Resources", key="resources_from_home_btn"):
+        st.switch_page(resources_page)
+
 
 def render_ndvi():
     render_banner(
@@ -486,6 +593,7 @@ def render_ndvi():
     else:
         st.info("Enter coordinates on the Home page to see your NDVI output here.")
 
+    # ── Definition card ─────────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<div class="card-title">📖 Definition</div>'
@@ -498,6 +606,17 @@ def render_ndvi():
         unsafe_allow_html=True,
     )
 
+    # ── NDVI image (NDVI.webp) ───────────────────────────────────────────────
+    st.image("NDVI.webp", use_container_width=True)
+    st.markdown(
+        '<p class="img-caption">'
+        '<a href="https://eos.com/blog/normalized-difference-vegetation-index-or-ndvi/" '
+        'target="_blank" rel="noopener noreferrer">Image source: EOS Data Analytics</a>'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
+    # ── NDVI values card ─────────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<div class="card-title">📊 Understanding NDVI Values</div>'
@@ -523,6 +642,7 @@ def render_ndvi():
         unsafe_allow_html=True,
     )
 
+    # ── Cancer research card ──────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<div class="card-title">🔬 NDVI &amp; Cancer Research</div>'
@@ -548,6 +668,17 @@ def render_ndvi():
         unsafe_allow_html=True,
     )
 
+    # ── Wellness image (Wellness.jpeg) ───────────────────────────────────────
+    st.image("Wellness.jpeg", use_container_width=True)
+    st.markdown(
+        '<p class="img-caption">'
+        '<a href="https://www.earth.com/news/nature-boosts-health-well-being/" '
+        'target="_blank" rel="noopener noreferrer">Image source: earth.com</a>'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Learn more card ───────────────────────────────────────────────────────
     st.markdown(
         '<div class="card" style="background:#e8f0eb;border-color:#4a7c59;">'
         '<div class="card-title" style="color:#4a7c59;">📚 Learn More</div>'
@@ -564,6 +695,8 @@ def render_ndvi():
 
     if st.button("← Back to Home", key="back_to_home_btn"):
         st.switch_page(home_page)
+    if st.button("📋 Resources", key="resources_from_ndvi_btn"):
+        st.switch_page(resources_page)
 
 
 def render_air_quality():
@@ -577,46 +710,165 @@ def render_air_quality():
     else:
         st.info("Enter coordinates on the Home page to see your air quality output here.")
 
+    # ── Ozone card ────────────────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
-        '<div class="card-title">Ozone:</div>'
-        '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">'
+        '<div class="card-title">Ozone</div>'
+        '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0 0 1rem 0;">'
         '<strong>What is Ozone?</strong><br>'
-        'Ozone, also known as O3, is a highly reactive gas molecule made up of 3 oxygen atoms. For comparison, the typical oxygen we breathe is O2, with only two oxygen atoms. As much as extra oxygen may sound good, this molecule is not stable and can negatively affect the body.<br><br>'
-        'Ozone is a natural component of the upper atmosphere, but ground-level ozone, which is the ozone that exists where we live and breathe, is not so natural. Ground-level ozone is formed by reactions in the air with nitrogen oxides, volatile organic compounds, and sunlight. The former two are air pollutants, entering the atmosphere through processes such as industrial facility emissions, gasoline vapor, exhaust from cars and other vehicles, and even electric utilities! Thus, all of these processes can increase ozone in the air we breathe.<br><br>'
-        '<strong>Ozone and Cancer:</strong><br>'
-        'Ozone has drastic effects on cancer outcomes. Lung cancer, cancer, kidney cancer, breast cancer, prostate cancer, and even brain cancer are just a few of the cancers that ozone can affect. It was found that a 10 &micro;g/m3 (or 0.0051 ppm, the metric we use to measure ozone on this site) increase in ozone over a 3-day period can increase cancer mortality by 1%. This effect is especially pronounced during warmer times of the year. Ozone has such a strong effect on cancer mortality that ozone exposure had a significant effect on the likelihood of cancer death up to two days before the death.<br><br>'
-        'To learn more about this, check out <a href="https://onlinelibrary-wiley-com.libproxy1.usc.edu/doi/full/10.1002/ijc.35069" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">this study</a>.'
+        'Ozone, also known as O3, is a highly reactive gas molecule made up of 3 oxygen atoms. For comparison, '
+        'the typical oxygen we breathe is O2, with only two oxygen atoms. As much as extra oxygen may sound good, '
+        'this molecule is not stable and can negatively affect the body.<br><br>'
+        'Ozone is a natural component of the upper atmosphere, but ground-level ozone, which is the ozone that '
+        'exists where we live and breathe, is not so natural. Ground-level ozone is formed by reactions in the '
+        'air with nitrogen oxides, volatile organic compounds, and sunlight. The former two are air pollutants, '
+        'entering the atmosphere through processes such as industrial facility emissions, gasoline vapor, exhaust '
+        'from cars and other vehicles, and even electric utilities! Thus, all of these processes can increase '
+        'ozone in the air we breathe.'
         '</p>'
         '</div>',
         unsafe_allow_html=True,
     )
 
+    # ── Ozone image 1 (Ozone1.png) ────────────────────────────────────────────
+    st.image("Ozone1.png", use_container_width=True)
+    st.markdown(
+        '<p class="img-caption">'
+        '<a href="https://www.khanacademy.org/science/ap-college-environmental-science/x0b0e430a38ebd23f:gl" '
+        'target="_blank" rel="noopener noreferrer">Image source: Khan Academy</a>'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Ozone image 2 (Ozone2.png) ────────────────────────────────────────────
+    st.image("Ozone2.png", use_container_width=True)
+    st.markdown(
+        '<p class="img-caption">'
+        '<a href="https://otcair.org/about-ozone" '
+        'target="_blank" rel="noopener noreferrer">Image source: Ozone Transport Commission</a>'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Ozone and Cancer ──────────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
-        '<div class="card-title">PM2.5:</div>'
+        '<div class="card-title">Ozone and Cancer</div>'
+        '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">'
+        'Ozone has drastic effects on cancer outcomes. Lung cancer, kidney cancer, breast cancer, prostate cancer, '
+        'and even brain cancer are just a few of the cancers that ozone can affect. It was found that a '
+        '10 &micro;g/m\u00b3 (or 0.0051 ppm, the metric we use to measure ozone on this site) increase in ozone '
+        'over a 3-day period can increase cancer mortality by 1%. This effect is especially pronounced during '
+        'warmer times of the year. Ozone has such a strong effect on cancer mortality that ozone exposure had a '
+        'significant effect on the likelihood of cancer death up to two days before the death.<br><br>'
+        'To learn more about lung cancer and ozone, check out some other relevant studies on:<br>'
+        '&bull; <a href="https://www.nature.com/articles/s41370-019-0135-4" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'Long-term ozone exposure</a><br>'
+        '&bull; <a href="https://onlinelibrary-wiley-com.libproxy1.usc.edu/doi/full/10.1002/ijc.35069" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'Short-term ozone exposure</a><br>'
+        '&bull; <a href="https://ascopost.com/news/january-2026/associations-found-between-air-pollutants-and-lung-cancer-subtypes/" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'Air pollution and lung cancer</a>'
+        '</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── PM2.5 — What is it ────────────────────────────────────────────────────
+    st.markdown(
+        '<div class="card">'
+        '<div class="card-title">PM2.5</div>'
         '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">'
         '<strong>What is PM2.5?</strong><br>'
-        'PM2.5 stands for particulate matter 2.5. These are microscopic particles with diameters less than 2.5 &micro;m, which is 30 times smaller than a human hair!<br>'
-        'These particles come from construction sites, sources of fire/smoke, unpaved roads, and chemical reactions in the atmosphere with other air pollutants, like SO2 and NO.<br><br>'
-        '<strong>PM2.5 and Cancer:</strong><br>'
-        'Increased PM2.5 values were found to independently predict a decrease in <a href="https://www-sciencedirect-com.libproxy1.usc.edu/science/article/pii/S0013935126007759?via%3Dihub" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">breast cancer survival</a>. This pattern was tracked to have an increased hazard ratio (an indication of risk) by 1.144 per 1 &micro;g/m3 increase of PM2.5 concentration. These effects are especially pronounced for older patients (65 years or older) as well as those in earlier stages of cancer diagnosis (stages I and II).<br><br>'
-        '<a href="https://pubs-acs-org.libproxy1.usc.edu/doi/pdf/10.1021/acs.est.4c10986" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">Another study</a> found that PM2.5 levels have a drastic effect on the incidence (aka development) of all gastrointestinal (GI) cancers. Specifically, the adjusted hazard ratio for a 1 standard deviation increase in PM2.5 mass is 1.367 for all GI cancers.<br><br>'
-        'The most studied cancer with relation to PM2.5 is lung cancer, as PM2.5 enters the body through the lungs. <a href="https://oce-ovid-com.libproxy1.usc.edu/article/00008469-202211000-00006/PDF" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">One study</a> found that a 10 &micro;g/m3 increase in PM2.5 related to a 7.95% increase in lung cancer mortality, with more significant effects on men and older folks (65 years or older).<br><br>'
-        'To learn more about lung cancer and PM2.5, check out some other relevant studies on:<br>'
-        '- <a href="https://onlinelibrary-wiley-com.libproxy1.usc.edu/doi/full/10.1002/tox.22437" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">How PM2.5 causes lung cancer</a><br>'
-        '- <a href="https://www-sciencedirect-com.libproxy1.usc.edu/science/article/pii/S0048969717317643" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">PM2.5 and male lung cancer</a><br>'
-        '- <a href="https://www.proquest.com/docview/3307473046?accountid=14749&parentSessionId=ebTcDAjx0wcSqNJ6ZPbbZyurTyde0SdRnOJayaC237A%3D&pq-origsite=primo&sourcetype=Scholarly%20Journals" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">PM2.5 and lung cancer ecology</a>'
+        'PM2.5 stands for particulate matter 2.5. These are microscopic particles with diameters less than '
+        '2.5 &micro;m, which is 30 times smaller than a human hair!<br>'
+        'These particles come from construction sites, sources of fire/smoke, unpaved roads, and chemical '
+        'reactions in the atmosphere with other air pollutants, like SO2 and NO.'
         '</p>'
         '</div>',
         unsafe_allow_html=True,
     )
 
+    # ── PM2.5 image (PM2_5.jpg) ───────────────────────────────────────────────
+    st.image("PM2.5.jpg", use_container_width=True)
     st.markdown(
-        '<div class="card" style="background:#e8f0eb;border-color:#4a7c59;">'
-        '<div class="card-title" style="color:#4a7c59;">More resources:</div>'
+        '<p class="img-caption">'
+        '<a href="https://www.epa.gov/pm-pollution/particulate-matter-pm-basics" '
+        'target="_blank" rel="noopener noreferrer">Image source: Environmental Protection Agency</a>'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
+    # ── PM2.5 and Cancer ──────────────────────────────────────────────────────
+    st.markdown(
+        '<div class="card">'
+        '<div class="card-title">PM2.5 and Cancer</div>'
         '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">'
-        'To get a more comprehensive understanding of your air quality and environmental health hazards, we encourage you to check out <a href="https://oehha.ca.gov/calenviroscreen/report/calenviroscreen-40" target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">CalEnviroScreen 4.0</a>. This is a tool put together by the California Office of Environmental Health Hazard Assessment. It is similar to this tool in that it allows you to look up information for your area, but with some different parameters as our tool focuses on cancer risk, rather than overall air health.'
+        'Increased PM2.5 values were found to independently predict a decrease in '
+        '<a href="https://www-sciencedirect-com.libproxy1.usc.edu/science/article/pii/S0013935126007759?via%3Dihub" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'breast cancer survival</a>. This pattern was tracked to have an increased hazard ratio (an indication '
+        'of risk) by 1.144 per 1 &micro;g/m\u00b3 increase of PM2.5 concentration. These effects are especially '
+        'pronounced for older patients (65 years or older) as well as those in earlier stages of cancer diagnosis '
+        '(stages I and II).<br><br>'
+        '<a href="https://pubs-acs-org.libproxy1.usc.edu/doi/pdf/10.1021/acs.est.4c10986" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'Another study</a> found that PM2.5 levels have a drastic effect on the incidence (aka development) of '
+        'all gastrointestinal (GI) cancers. Specifically, the adjusted hazard ratio for a 1 standard deviation '
+        'increase in PM2.5 mass is 1.367 for all GI cancers.<br><br>'
+        'The most studied cancer with relation to PM2.5 is lung cancer, as PM2.5 enters the body through the '
+        'lungs. <a href="https://oce-ovid-com.libproxy1.usc.edu/article/00008469-202211000-00006/PDF" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'One study</a> found that a 10 &micro;g/m\u00b3 increase in PM2.5 related to a 7.95% increase in lung '
+        'cancer mortality, with more significant effects on men and older folks (65 years or older).<br><br>'
+        'To learn more about lung cancer and PM2.5, check out some other relevant studies on:<br>'
+        '&bull; <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC6915823/pdf/kwx166.pdf" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'Long-term PM2.5 exposure in U.S. adults</a><br>'
+        '&bull; <a href="https://onlinelibrary-wiley-com.libproxy1.usc.edu/doi/full/10.1002/tox.22437" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'How PM2.5 causes lung cancer</a><br>'
+        '&bull; <a href="https://www-sciencedirect-com.libproxy1.usc.edu/science/article/pii/S0048969717317643" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'PM2.5 and male lung cancer</a><br>'
+        '&bull; <a href="https://www.proquest.com/docview/3307473046?accountid=14749&parentSessionId=ebTcDAjx0wcSqNJ6ZPbbZyurTyde0SdRnOJayaC237A%3D&pq-origsite=primo&sourcetype=Scholarly%20Journals" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'PM2.5 and lung cancer ecology</a>'
+        '</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Traffic image (Traffic.webp) ──────────────────────────────────────────
+    st.image("Traffic.webp", use_container_width=True)
+    st.markdown(
+        '<p class="img-caption">'
+        '<a href="https://cepr.org/voxeu/columns/road-traffic-flow-and-air-pollution-concentrations-evidence-japan" '
+        'target="_blank" rel="noopener noreferrer">Image source: Centre for Economic Policy Research</a>'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="did-you-know">'
+        '💡 <strong>Did you know:</strong> Areas with a lot of traffic are more likely to have ozone and PM2.5 air pollution.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── More resources card ───────────────────────────────────────────────────
+    st.markdown(
+        '<div class="card" style="background:#e8f0eb;border-color:#4a7c59;margin-top:1.25rem;">'
+        '<div class="card-title" style="color:#4a7c59;">More resources</div>'
+        '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">'
+        'To get a more comprehensive understanding of your air quality and environmental health hazards, we '
+        'encourage you to check out '
+        '<a href="https://oehha.ca.gov/calenviroscreen/report/calenviroscreen-40" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'CalEnviroScreen 4.0</a>. This is a tool put together by the California Office of Environmental Health '
+        'Hazard Assessment. It is similar to this tool in that it allows you to look up information for your '
+        'area, but with some different parameters as our tool focuses on cancer risk, rather than overall air health.'
         '</p>'
         '</div>',
         unsafe_allow_html=True,
@@ -624,11 +876,81 @@ def render_air_quality():
 
     if st.button("← Back to Home", key="back_to_home_air_quality_btn"):
         st.switch_page(home_page)
+    if st.button("📋 Resources", key="resources_from_air_quality_btn"):
+        st.switch_page(resources_page)
+
+
+def render_resources():
+    render_banner(
+        title="Resources",
+        desc="Steps you can take to reduce your environmental cancer risk",
+    )
+
+    st.markdown(
+        '<div class="card">'
+        '<p style="font-size:0.95rem;line-height:1.75;color:#1e2d1f;margin:0;">'
+        'We understand that much of the data provided in this tool mentions things that are out of your control, '
+        'and a mere result of where you live. We know that completely moving to a new place with a healthier '
+        'environment is completely unfeasible for many people (nor should a single website like this encourage '
+        'you to make such a big decision). So here are some things you can control in light of your environmental '
+        'cancer risk factors.'
+        '</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="card">'
+        '<div class="card-title">🌿 NDVI</div>'
+        '<p style="font-size:0.95rem;line-height:1.75;color:#1e2d1f;margin:0 0 1rem 0;">'
+        'You may not be able to change the local vegetation around you, but that doesn\'t mean you can\'t expose '
+        'yourself to more greenspaces. Making an effort to spend more time outdoors, especially in local parks or '
+        'forests is a great idea, and can benefit your health. Community resources like hiking groups, run clubs, '
+        'community gardens, or any other nature-friendly organization can be a great way to get yourself spending '
+        'more time in greenspaces.'
+        '</p>'
+        '<p style="font-size:0.95rem;line-height:1.75;color:#1e2d1f;margin:0;">'
+        'You can also bring the greenspace to you! Getting some houseplants or starting a garden in your backyard '
+        'can provide some of the mental benefits of being in nature, and can even help make the air around you '
+        'cleaner! Additionally, growing fruits and vegetables at home is a cost-effective way to get clean, '
+        'organic food while also exposing yourself to more greenery.'
+        '</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="card">'
+        '<div class="card-title">💨 Air Quality</div>'
+        '<p style="font-size:0.95rem;line-height:1.75;color:#1e2d1f;margin:0 0 1rem 0;">'
+        'As much as air quality can seem pervasive, there are many things you can do to reduce your exposure to '
+        'pollutants. One great way is to invest in high-quality, up-to-date air filters for your HVAC system at '
+        'home, and/or portable air purification systems (i.e. HEPA filters). This can help prevent air pollutants '
+        'from entering your home, and remove them out once they do. For more information about air filters, check '
+        'out the <a href="https://www.epa.gov/indoor-air-quality-iaq/guide-air-cleaners-home" '
+        'target="_blank" rel="noopener noreferrer" style="color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;">'
+        'EPA\'s Guide to Air Cleaners in the Home</a>.'
+        '</p>'
+        '<p style="font-size:0.95rem;line-height:1.75;color:#1e2d1f;margin:0;">'
+        'Other ways to reduce air pollution exposure are to keep in mind the sources of air pollution, such as '
+        'industrial processes or traffic. If you live off of a busy street, or by a construction site or other '
+        'source of air pollution, it is a good idea to limit open windows in your home, especially during active '
+        'hours. Moreover, if you find yourself sitting in traffic, closing the windows in your car can reduce '
+        'exposure. If you do go outside into an area with heavy air pollution, wearing a face mask can help '
+        'relieve any discomfort/smells, and reduce exposure.'
+        '</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    if st.button("← Back to Home", key="back_to_home_resources_btn"):
+        st.switch_page(home_page)
 
 
 home_page = st.Page(render_home, title="Home", default=True)
 ndvi_page = st.Page(render_ndvi, title="NDVI")
 air_quality_page = st.Page(render_air_quality, title="Air Quality")
+resources_page = st.Page(render_resources, title="Resources")
 
-pg = st.navigation([home_page, ndvi_page, air_quality_page])
+pg = st.navigation([home_page, ndvi_page, air_quality_page, resources_page])
 pg.run()
