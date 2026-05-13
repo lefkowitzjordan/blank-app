@@ -294,6 +294,16 @@ button[kind="header"]:hover {
 """, unsafe_allow_html=True)
 
 
+# ── Lazy page getters (fixes NameError from forward references) ──────────────
+# These functions are only *called* at runtime, after all st.Page objects exist.
+def get_home_page():       return home_page
+def get_ndvi_page():       return ndvi_page
+def get_air_quality_page(): return air_quality_page
+def get_resources_page():  return resources_page
+
+
+# ── Data helpers ─────────────────────────────────────────────────────────────
+
 def download_tif_if_needed():
     if not os.path.exists(TIF_PATH):
         from huggingface_hub import hf_hub_download
@@ -301,7 +311,7 @@ def download_tif_if_needed():
             repo_id="jordanl2/ndvi-data",
             filename="NDVI_california.tif",
             repo_type="dataset",
-            local_dir="/tmp",
+            local_dir=os.path.dirname(TIF_PATH),
         )
 
 
@@ -314,6 +324,35 @@ def open_raster():
 @st.cache_data
 def load_calenviro(path):
     return pd.read_excel(path, engine="openpyxl")
+
+
+@st.cache_data
+def compute_ndvi_stats():
+    """Read raster tile-by-tile (memory efficient) and return (sorted positive values, mean)."""
+    download_tif_if_needed()
+    src = rasterio.open(TIF_PATH)
+    positive_vals = []
+    for _, window in src.block_windows(1):
+        block = src.read(1, window=window, masked=True)
+        vals = block.compressed()
+        vals = vals[vals > 0]
+        if len(vals) > 0:
+            positive_vals.append(vals)
+    all_vals = np.concatenate(positive_vals)
+    mean_val = float(np.mean(all_vals))
+    sorted_vals = np.sort(all_vals)
+    return sorted_vals, mean_val
+
+
+def ndvi_percentile(ndvi_value: float) -> float:
+    sorted_vals, _ = compute_ndvi_stats()
+    pct = float(np.searchsorted(sorted_vals, ndvi_value, side='right')) / len(sorted_vals) * 100
+    return round(pct, 1)
+
+
+def ndvi_state_average() -> float:
+    _, mean_val = compute_ndvi_stats()
+    return round(mean_val, 3)
 
 
 def find_nearest_tract(df, lat, lon):
@@ -329,47 +368,6 @@ def fmt3(value):
         return f"{float(value):.3g}"
     except Exception:
         return str(value)
-
-
-def render_banner(title: str, desc: str = ""):
-    desc_html = f'<p>{desc}</p>' if desc else ''
-    st.markdown(
-        '<div class="page-header">'
-        '<h1>' + title + '</h1>'
-        + desc_html +
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-
-@st.cache_data
-def compute_ndvi_stats():
-    """Compute positive-pixel mean and sorted array using tiled reads to save memory."""
-    download_tif_if_needed()
-    src = rasterio.open(TIF_PATH)
-    positive_vals = []
-    for ji, window in src.block_windows(1):
-        block = src.read(1, window=window, masked=True)
-        vals = block.compressed()
-        vals = vals[vals > 0]
-        if len(vals) > 0:
-            positive_vals.append(vals)
-    all_vals = np.concatenate(positive_vals)
-    mean_val = float(np.mean(all_vals))
-    sorted_vals = np.sort(all_vals)
-    return sorted_vals, mean_val
-
-
-def ndvi_percentile(ndvi_value: float) -> float:
-    """Return the percentile (0-100) of ndvi_value among all CA pixels > 0."""
-    sorted_vals, _ = compute_ndvi_stats()
-    pct = float(np.searchsorted(sorted_vals, ndvi_value, side='right')) / len(sorted_vals) * 100
-    return round(pct, 1)
-
-
-def ndvi_state_average() -> float:
-    _, mean_val = compute_ndvi_stats()
-    return round(mean_val, 3)
 
 
 def compute_location_data(lat: float, lon: float):
@@ -417,6 +415,19 @@ def store_last_result(data: dict):
     st.session_state["last_latlon_text"] = f"{data['lat']:.5f}, {data['lon']:.5f}"
 
 
+# ── Reusable UI components ───────────────────────────────────────────────────
+
+def render_banner(title: str, desc: str = ""):
+    desc_html = f'<p>{desc}</p>' if desc else ''
+    st.markdown(
+        '<div class="page-header">'
+        '<h1>' + title + '</h1>'
+        + desc_html +
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_ndvi_output_card(data: dict):
     ndvi_value = data.get("ndvi_value")
     ndvi_pctl = data.get("ndvi_pctl")
@@ -432,7 +443,6 @@ def render_ndvi_output_card(data: dict):
                 f'(areas with NDVI &gt; 0). The state average is <strong>{state_avg}</strong>.'
                 '</div>'
             )
-
     st.markdown(
         '<div class="card">'
         '<div class="card-title">Your NDVI output</div>'
@@ -463,11 +473,11 @@ def render_air_quality_output_card(data: dict):
     )
 
 
+# ── Page renderers ───────────────────────────────────────────────────────────
+
 def render_home():
-    # Header — no subtitle
     render_banner(title="Cancer Risk Factor Search")
 
-    # ── Introductory text card ──────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<p style="font-size:0.95rem;line-height:1.75;color:#1e2d1f;margin:0 0 1rem 0;">'
@@ -496,7 +506,6 @@ def render_home():
         unsafe_allow_html=True,
     )
 
-    # ── Coordinate input ────────────────────────────────────────────────────
     st.markdown(
         '<p style="font-size:0.875rem;color:#6b7c6d;margin:0 0 0.5rem 0;">'
         'Enter coordinates to retrieve vegetation, air quality, and environmental risk data for any California location.'
@@ -525,12 +534,12 @@ def render_home():
             render_ndvi_output_card(data)
 
             if st.button("What's NDVI?", key="whats_ndvi_btn"):
-                st.switch_page(ndvi_page)
+                st.switch_page(get_ndvi_page())
 
             render_air_quality_output_card(data)
 
             if st.button("Learn more about air quality", key="learn_more_air_quality_btn"):
-                st.switch_page(air_quality_page)
+                st.switch_page(get_air_quality_page())
 
             st.markdown(
                 '<div class="card">'
@@ -580,10 +589,10 @@ def render_home():
             ))
 
         except Exception:
-            st.exception(e)
+            st.error("Please enter coordinates in the format: 34.05, -118.25")
 
     if st.button("📋 Resources", key="resources_from_home_btn"):
-        st.switch_page(resources_page)
+        st.switch_page(get_resources_page())
 
 
 def render_ndvi():
@@ -597,7 +606,6 @@ def render_ndvi():
     else:
         st.info("Enter coordinates on the Home page to see your NDVI output here.")
 
-    # ── Definition card ─────────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<div class="card-title">📖 Definition</div>'
@@ -610,7 +618,6 @@ def render_ndvi():
         unsafe_allow_html=True,
     )
 
-    # ── NDVI image (NDVI.webp) ───────────────────────────────────────────────
     st.image("NDVI.webp", use_container_width=True)
     st.markdown(
         '<p class="img-caption">'
@@ -620,7 +627,6 @@ def render_ndvi():
         unsafe_allow_html=True,
     )
 
-    # ── NDVI values card ─────────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<div class="card-title">📊 Understanding NDVI Values</div>'
@@ -646,7 +652,6 @@ def render_ndvi():
         unsafe_allow_html=True,
     )
 
-    # ── Cancer research card ──────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<div class="card-title">🔬 NDVI &amp; Cancer Research</div>'
@@ -672,7 +677,6 @@ def render_ndvi():
         unsafe_allow_html=True,
     )
 
-    # ── Wellness image (Wellness.jpeg) ───────────────────────────────────────
     st.image("Wellness.jpeg", use_container_width=True)
     st.markdown(
         '<p class="img-caption">'
@@ -682,7 +686,6 @@ def render_ndvi():
         unsafe_allow_html=True,
     )
 
-    # ── Learn more card ───────────────────────────────────────────────────────
     st.markdown(
         '<div class="card" style="background:#e8f0eb;border-color:#4a7c59;">'
         '<div class="card-title" style="color:#4a7c59;">📚 Learn More</div>'
@@ -698,9 +701,9 @@ def render_ndvi():
     )
 
     if st.button("← Back to Home", key="back_to_home_btn"):
-        st.switch_page(home_page)
+        st.switch_page(get_home_page())
     if st.button("📋 Resources", key="resources_from_ndvi_btn"):
-        st.switch_page(resources_page)
+        st.switch_page(get_resources_page())
 
 
 def render_air_quality():
@@ -714,11 +717,10 @@ def render_air_quality():
     else:
         st.info("Enter coordinates on the Home page to see your air quality output here.")
 
-    # ── Ozone card ────────────────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<div class="card-title">Ozone</div>'
-        '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0 0 1rem 0;">'
+        '<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">'
         '<strong>What is Ozone?</strong><br>'
         'Ozone, also known as O3, is a highly reactive gas molecule made up of 3 oxygen atoms. For comparison, '
         'the typical oxygen we breathe is O2, with only two oxygen atoms. As much as extra oxygen may sound good, '
@@ -734,7 +736,6 @@ def render_air_quality():
         unsafe_allow_html=True,
     )
 
-    # ── Ozone image 1 (Ozone1.png) ────────────────────────────────────────────
     st.image("Ozone1.png", use_container_width=True)
     st.markdown(
         '<p class="img-caption">'
@@ -744,7 +745,6 @@ def render_air_quality():
         unsafe_allow_html=True,
     )
 
-    # ── Ozone image 2 (Ozone2.png) ────────────────────────────────────────────
     st.image("Ozone2.png", use_container_width=True)
     st.markdown(
         '<p class="img-caption">'
@@ -754,7 +754,6 @@ def render_air_quality():
         unsafe_allow_html=True,
     )
 
-    # ── Ozone and Cancer ──────────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<div class="card-title">Ozone and Cancer</div>'
@@ -780,7 +779,6 @@ def render_air_quality():
         unsafe_allow_html=True,
     )
 
-    # ── PM2.5 — What is it ────────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<div class="card-title">PM2.5</div>'
@@ -795,8 +793,7 @@ def render_air_quality():
         unsafe_allow_html=True,
     )
 
-    # ── PM2.5 image (PM2_5.jpg) ───────────────────────────────────────────────
-    st.image("PM2.5.jpg", use_container_width=True)
+    st.image("PM2_5.jpg", use_container_width=True)
     st.markdown(
         '<p class="img-caption">'
         '<a href="https://www.epa.gov/pm-pollution/particulate-matter-pm-basics" '
@@ -805,7 +802,6 @@ def render_air_quality():
         unsafe_allow_html=True,
     )
 
-    # ── PM2.5 and Cancer ──────────────────────────────────────────────────────
     st.markdown(
         '<div class="card">'
         '<div class="card-title">PM2.5 and Cancer</div>'
@@ -845,7 +841,6 @@ def render_air_quality():
         unsafe_allow_html=True,
     )
 
-    # ── Traffic image (Traffic.webp) ──────────────────────────────────────────
     st.image("Traffic.webp", use_container_width=True)
     st.markdown(
         '<p class="img-caption">'
@@ -861,7 +856,6 @@ def render_air_quality():
         unsafe_allow_html=True,
     )
 
-    # ── More resources card ───────────────────────────────────────────────────
     st.markdown(
         '<div class="card" style="background:#e8f0eb;border-color:#4a7c59;margin-top:1.25rem;">'
         '<div class="card-title" style="color:#4a7c59;">More resources</div>'
@@ -879,9 +873,9 @@ def render_air_quality():
     )
 
     if st.button("← Back to Home", key="back_to_home_air_quality_btn"):
-        st.switch_page(home_page)
+        st.switch_page(get_home_page())
     if st.button("📋 Resources", key="resources_from_air_quality_btn"):
-        st.switch_page(resources_page)
+        st.switch_page(get_resources_page())
 
 
 def render_resources():
@@ -948,9 +942,10 @@ def render_resources():
     )
 
     if st.button("← Back to Home", key="back_to_home_resources_btn"):
-        st.switch_page(home_page)
+        st.switch_page(get_home_page())
 
 
+# ── Page registration (must come after all render functions) ─────────────────
 home_page = st.Page(render_home, title="Home", default=True)
 ndvi_page = st.Page(render_ndvi, title="NDVI")
 air_quality_page = st.Page(render_air_quality, title="Air Quality")
