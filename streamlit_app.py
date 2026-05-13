@@ -11,7 +11,7 @@ APP_SUBTITLE = "Environmental insights for informed health decisions"
 
 st.set_page_config(page_title="Cancer Risk Factor Search", layout="wide")
 
-TIF_PATH = "/tmp/NDVI_california.tif"
+TIF_PATH = "/mount/src/blank-app/NDVI_california.tif"
 CALENV_PATH = "CalEnvScreen.xlsx"
 
 st.markdown("""
@@ -344,15 +344,19 @@ def render_banner(title: str, desc: str = ""):
 
 @st.cache_data
 def compute_ndvi_stats():
-    """Read the full raster once and return (sorted positive values array, mean)."""
+    """Compute positive-pixel mean and sorted array using tiled reads to save memory."""
     download_tif_if_needed()
     src = rasterio.open(TIF_PATH)
-    data = src.read(1, masked=True)
-    # Keep only valid, positive values
-    valid = data.compressed()
-    positive = valid[valid > 0]
-    mean_val = float(np.mean(positive))
-    sorted_vals = np.sort(positive)
+    positive_vals = []
+    for ji, window in src.block_windows(1):
+        block = src.read(1, window=window, masked=True)
+        vals = block.compressed()
+        vals = vals[vals > 0]
+        if len(vals) > 0:
+            positive_vals.append(vals)
+    all_vals = np.concatenate(positive_vals)
+    mean_val = float(np.mean(all_vals))
+    sorted_vals = np.sort(all_vals)
     return sorted_vals, mean_val
 
 
