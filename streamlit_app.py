@@ -322,34 +322,89 @@ def load_calenviro(path):
     return pd.read_excel(path, engine="openpyxl")
 
 
-@st.cache_data
+NDVI_STATS_PATH = "/tmp/ndvi_stats.npz"
+NDVI_BINS = np.linspace(0.0, 1.0, 2001)  # 2000 bins, adjust if you want finer resolution
+
+
+@st.cache_resource
 def compute_ndvi_stats():
-    """Read raster tile-by-tile (memory efficient) and return (sorted positive values, mean)."""
+    """
+    Build a compact summary of the raster:
+    - histogram counts for percentile estimates
+    - total sum and count for mean
+    This avoids holding all NDVI values in memory.
+    """
     tif_path = download_tif_if_needed()
+
+    if os.path.exists(NDVI_STATS_PATH):
+        data = np.load(NDVI_STATS_PATH)
+        return (
+            data["edges"],
+            data["counts"],
+            float(data["total_sum"]),
+            int(data["total_count"]),
+        )
+
     src = rasterio.open(tif_path)
 
-    positive_vals = []
+    counts = np.zeros(len(NDVI_BINS) - 1, dtype=np.int64)
+    total_sum = 0.0
+    total_count = 0
+
     for _, window in src.block_windows(1):
         block = src.read(1, window=window, masked=True)
         vals = block.compressed()
-        vals = vals[vals > 0]
-        if len(vals) > 0:
-            positive_vals.append(vals)
+        vals = vals[np.isfinite(vals) & (vals > 0)]
 
-    all_vals = np.concatenate(positive_vals)
-    mean_val = float(np.mean(all_vals))
-    sorted_vals = np.sort(all_vals)
-    return sorted_vals, mean_val
+        if vals.size:
+            hist, _ = np.histogram(vals, bins=NDVI_BINS)
+            counts += hist.astype(np.int64)
+            total_sum += float(vals.sum())
+            total_count += int(vals.size)
+
+    np.savez(
+        NDVI_STATS_PATH,
+        edges=NDVI_BINS,
+        counts=counts,
+        total_sum=total_sum,
+        total_count=total_count,
+    )
+
+    return NDVI_BINS, counts, total_sum, total_count
+
 
 def ndvi_percentile(ndvi_value: float) -> float:
-    sorted_vals, _ = compute_ndvi_stats()
-    pct = float(np.searchsorted(sorted_vals, ndvi_value, side='right')) / len(sorted_vals) * 100
-    return round(pct, 1)
+    edges, counts, _, total_count = compute_ndvi_stats()
+
+    if total_count == 0 or ndvi_value is None:
+        return 0.0
+
+    if ndvi_value <= 0:
+        return 0.0
+
+    idx = np.searchsorted(edges, ndvi_value, side="right") - 1
+    idx = max(0, min(idx, len(counts) - 1))
+
+    cum_before = int(counts[:idx].sum())
+    bin_left = edges[idx]
+    bin_right = edges[idx + 1]
+    bin_count = int(counts[idx])
+
+    if bin_count == 0:
+        approx_rank = cum_before
+    else:
+        frac_in_bin = (ndvi_value - bin_left) / (bin_right - bin_left)
+        frac_in_bin = max(0.0, min(1.0, frac_in_bin))
+        approx_rank = cum_before + (bin_count * frac_in_bin)
+
+    return round((approx_rank / total_count) * 100, 1)
 
 
 def ndvi_state_average() -> float:
-    _, mean_val = compute_ndvi_stats()
-    return round(mean_val, 3)
+    _, _, total_sum, total_count = compute_ndvi_stats()
+    if total_count == 0:
+        return float("nan")
+    return round(total_sum / total_count, 3)
 
 
 def find_nearest_tract(df, lat, lon):
