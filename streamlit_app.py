@@ -589,7 +589,7 @@ def render_home():
                 map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
             ))
 
-        except Exception:
+        except Exception as e:
             st.error("Something went wrong while processing those coordinates")
             st.exception(e)
 
