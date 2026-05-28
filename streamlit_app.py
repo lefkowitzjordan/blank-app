@@ -294,32 +294,27 @@ button[kind="header"]:hover {
 """, unsafe_allow_html=True)
 
 
-# ── Lazy page getters (fixes NameError from forward references) ──────────────
-# These functions are only *called* at runtime, after all st.Page objects exist.
-def get_home_page():       return home_page
-def get_ndvi_page():       return ndvi_page
-def get_air_quality_page(): return air_quality_page
-def get_resources_page():  return resources_page
-
-
 # ── Data helpers ─────────────────────────────────────────────────────────────
 
 def download_tif_if_needed():
-    if not os.path.exists(TIF_PATH):
-        from huggingface_hub import hf_hub_download
-        hf_hub_download(
-            repo_id="jordanl2/ndvi-data",
-            filename="NDVI_california.tif",
-            repo_type="dataset",
-            local_dir="/tmp",
-            token=os.getenv("HF_TOKEN")
-        )
+    if os.path.exists(TIF_PATH):
+        return TIF_PATH
+
+    from huggingface_hub import hf_hub_download
+    downloaded_path = hf_hub_download(
+        repo_id="jordanl2/ndvi-data",
+        filename="NDVI_california.tif",
+        repo_type="dataset",
+        local_dir="/tmp",
+        token=os.getenv("HF_TOKEN"),
+    )
+    return downloaded_path
 
 
 @st.cache_resource
 def open_raster():
-    download_tif_if_needed()
-    return rasterio.open(TIF_PATH)
+    tif_path = download_tif_if_needed()
+    return rasterio.open(tif_path)
 
 
 @st.cache_data
@@ -330,8 +325,9 @@ def load_calenviro(path):
 @st.cache_data
 def compute_ndvi_stats():
     """Read raster tile-by-tile (memory efficient) and return (sorted positive values, mean)."""
-    download_tif_if_needed()
-    src = rasterio.open(TIF_PATH)
+    tif_path = download_tif_if_needed()
+    src = rasterio.open(tif_path)
+
     positive_vals = []
     for _, window in src.block_windows(1):
         block = src.read(1, window=window, masked=True)
@@ -339,11 +335,11 @@ def compute_ndvi_stats():
         vals = vals[vals > 0]
         if len(vals) > 0:
             positive_vals.append(vals)
+
     all_vals = np.concatenate(positive_vals)
     mean_val = float(np.mean(all_vals))
     sorted_vals = np.sort(all_vals)
     return sorted_vals, mean_val
-
 
 def ndvi_percentile(ndvi_value: float) -> float:
     sorted_vals, _ = compute_ndvi_stats()
