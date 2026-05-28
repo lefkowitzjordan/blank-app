@@ -311,7 +311,8 @@ def download_tif_if_needed():
             repo_id="jordanl2/ndvi-data",
             filename="NDVI_california.tif",
             repo_type="dataset",
-            local_dir=os.path.dirname(TIF_PATH),
+            local_dir="/tmp",
+            token=os.getenv("HF_TOKEN")
         )
 
 
