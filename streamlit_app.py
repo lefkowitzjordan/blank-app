@@ -1004,5 +1004,16 @@ ndvi_page = st.Page(render_ndvi, title="NDVI")
 air_quality_page = st.Page(render_air_quality, title="Air Quality")
 resources_page = st.Page(render_resources, title="Resources")
 
+# ── Lazy page getters ────────────────────────────────────────────────────────
+
+def get_home_page():
+    return home_page
+
+def get_ndvi_page():
+    return ndvi_page
+
+def get_air_quality_page():
+    return air_quality_page
+
 pg = st.navigation([home_page, ndvi_page, air_quality_page, resources_page])
 pg.run()
