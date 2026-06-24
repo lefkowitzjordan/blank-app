@@ -1055,7 +1055,7 @@ def render_air_quality():
         f'{t("air.pm25_cancer_p1")}<br><br>'
         f'{t("air.pm25_cancer_p2")}<br><br>'
         f'{t("air.pm25_cancer_p3")} '
-        f'{link("https://oce-ovid-com.libproxy1.usc.edu/article/00008469-202211000-00006/PDF", t("air.pm25_lung_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")} '
+        f'{link("https://pubmed.ncbi.nlm.nih.gov/35671253/", t("air.pm25_lung_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")} '
         f'{t("air.pm25_cancer_p4")}<br><br>'
         f'{t("air.pm25_research_intro")}<br>'
         f'&bull; {link("https://pmc.ncbi.nlm.nih.gov/articles/PMC6915823/pdf/kwx166.pdf", t("air.pm25_long_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}<br>'
