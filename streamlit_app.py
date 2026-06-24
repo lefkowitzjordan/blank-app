@@ -821,7 +821,7 @@ def render_home():
         placeholder=t("home.coord_placeholder"),
         key="home_latlon_input",
     )
-    
+
 if latlon:
     try:
         lat_str, lon_str = latlon.split(",")
@@ -841,14 +841,19 @@ if latlon:
         if st.button(t("btn.learn_more_air"), key="learn_more_air_quality_btn"):
             st.switch_page(air_quality_page)
 
+input_lat = f"{data['lat']:.5f}"
+input_lon = f"{data['lon']:.5f}"
+pixel_lat = f"{data['pixel_lat']:.5f}"
+pixel_lon = f"{data['pixel_lon']:.5f}"
+
         st.markdown(
             '<div class="card">'
             f'<div class="card-title">{t("home.map_title")}</div>'
             '<div class="legend-row">'
             '<span><span class="legend-dot" style="background:#3a7ca5;"></span>'
-            f'{t("home.map_legend_input").format(lat=f"{data[\'lat\']:.5f}", lon=f"{data[\'lon\']:.5f}")}</span>'
+            f'{t("home.map_legend_input").format(lat=input_lat, lon=input_lon)}</span>'
             '<span><span class="legend-dot" style="background:#c0392b;"></span>'
-            f'{t("home.map_legend_pixel").format(lat=f"{data[\'pixel_lat\']:.5f}", lon=f"{data[\'pixel_lon\']:.5f}")}</span>'
+            f'{t("home.map_legend_pixel").format(lat=pixel_lat, lon=pixel_lon)}</span>'
             '</div>'
             '</div>',
             unsafe_allow_html=True,
