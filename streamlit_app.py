@@ -841,10 +841,10 @@ if latlon:
         if st.button(t("btn.learn_more_air"), key="learn_more_air_quality_btn"):
             st.switch_page(air_quality_page)
 
-input_lat = f"{data['lat']:.5f}"
-input_lon = f"{data['lon']:.5f}"
-pixel_lat = f"{data['pixel_lat']:.5f}"
-pixel_lon = f"{data['pixel_lon']:.5f}"
+        input_lat = f"{data['lat']:.5f}"
+        input_lon = f"{data['lon']:.5f}"
+        pixel_lat = f"{data['pixel_lat']:.5f}"
+        pixel_lon = f"{data['pixel_lon']:.5f}"
 
         st.markdown(
             '<div class="card">'
