@@ -717,7 +717,10 @@ def render_language_picker():
         f"""
         <div class="card">
             <div class="card-title">{t("lang.select")}</div>
-            <p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0 0 1rem 0;">Choose the language for the site.</p>
+            <p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0 0 1rem 0;">
+                Choose the language for the site.<br>
+                Seleccione el idioma del sitio.
+            </p>
         </div>
         """,
         unsafe_allow_html=True,
