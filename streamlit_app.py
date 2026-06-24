@@ -7,7 +7,7 @@ import rasterio
 import streamlit as st
 from pyproj import Transformer
 
-APP_TITLE = "ClearLand"
+APP_TITLE = "Cancer Risk Factor Search"
 APP_SUBTITLE = "Environmental insights for informed health decisions"
 
 st.set_page_config(page_title=APP_TITLE, layout="wide")
@@ -91,6 +91,7 @@ TRANSLATIONS = {
         "air.ozone_air_pollution_link_text": "Air pollution and lung cancer",
         "air.pm25_title": "PM2.5",
         "air.pm25_what_is": "What is PM2.5?",
+        "air.pm25_lung_link_text": "One study",
         "air.pm25_p1": "PM2.5 stands for particulate matter 2.5. These are microscopic particles with diameters less than 2.5 µm, which is 30 times smaller than a human hair!",
         "air.pm25_p2": "These particles come from construction sites, sources of fire/smoke, unpaved roads, and chemical reactions in the atmosphere with other air pollutants, like SO2 and NO.",
         "air.pm25_image_source": "Image source: Environmental Protection Agency",
@@ -205,6 +206,7 @@ TRANSLATIONS = {
         "air.pm25_p2": "Estas partículas pueden provenir de obras de construcción, incendios y humo, caminos sin pavimentar, y de reacciones químicas en la atmósfera que involucran otros contaminantes del aire, como el dióxido de azufre (SO₂) y el óxido nítrico (NO).",
         "air.pm25_image_source": "Fuente de la imagen: Environmental Protection Agency",
         "air.pm25_cancer_title": "PM2.5 y cáncer",
+        "air.pm25_lung_link_text": "Un estudio",
         "air.pm25_cancer_p1": "Se ha encontrado que niveles más altos de PM2.5 pueden predecir de manera independiente una menor supervivencia en pacientes con cáncer de mama. Los investigadores observaron que por cada aumento de 1 µg/m³ en la concentración de PM2.5, el índice de riesgo (hazard ratio) aumentaba a 1.144, lo que indica un mayor riesgo de mortalidad. Estos efectos fueron especialmente marcados en pacientes mayores de 65 años y en aquellas personas diagnosticadas en etapas tempranas del cáncer (estadios I y II).",
         "air.pm25_cancer_p2": "Otro estudio encontró que los niveles de PM2.5 tienen un efecto importante sobre la incidencia (es decir, el desarrollo) de los cánceres gastrointestinales (GI). En particular, el índice de riesgo ajustado para un aumento de una desviación estándar en la concentración de PM2.5 fue de 1.367 para el conjunto de los cánceres gastrointestinales.",
         "air.pm25_cancer_p3": "El cáncer más estudiado en relación con el PM2.5 es el cáncer de pulmón, ya que estas partículas ingresan al organismo a través de los pulmones.",
@@ -821,6 +823,7 @@ def render_home():
         placeholder=t("home.coord_placeholder"),
         key="home_latlon_input",
     )
+    st.caption(t("home.coord_placeholder"))
 
     if latlon:
         try:
@@ -898,8 +901,9 @@ def render_home():
         except Exception as e:
             st.error(t("error.processing_coordinates"))
             st.exception(e)
+    
+    resources_button("resources_from_home_btn")
 
-resources_button("resources_from_home_btn")
 def render_ndvi():
     render_banner(
         title=t("ndvi.title"),
