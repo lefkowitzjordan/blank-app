@@ -822,82 +822,82 @@ def render_home():
         key="home_latlon_input",
     )
 
-if latlon:
-    try:
-        lat_str, lon_str = latlon.split(",")
-        lat = float(lat_str.strip())
-        lon = float(lon_str.strip())
+    if latlon:
+        try:
+            lat_str, lon_str = latlon.split(",")
+            lat = float(lat_str.strip())
+            lon = float(lon_str.strip())
 
-        data = compute_location_data(lat, lon)
-        store_last_result(data)
+            data = compute_location_data(lat, lon)
+            store_last_result(data)
 
-        render_ndvi_output_card(data)
+            render_ndvi_output_card(data)
 
-        if st.button(t("btn.whats_ndvi"), key="whats_ndvi_btn"):
-            st.switch_page(ndvi_page)
+            if st.button(t("btn.whats_ndvi"), key="whats_ndvi_btn"):
+                st.switch_page(ndvi_page)
 
-        render_air_quality_output_card(data)
+            render_air_quality_output_card(data)
 
-        if st.button(t("btn.learn_more_air"), key="learn_more_air_quality_btn"):
-            st.switch_page(air_quality_page)
+            if st.button(t("btn.learn_more_air"), key="learn_more_air_quality_btn"):
+                st.switch_page(air_quality_page)
 
-        input_lat = f"{data['lat']:.5f}"
-        input_lon = f"{data['lon']:.5f}"
-        pixel_lat = f"{data['pixel_lat']:.5f}"
-        pixel_lon = f"{data['pixel_lon']:.5f}"
+            input_lat = f"{data['lat']:.5f}"
+            input_lon = f"{data['lon']:.5f}"
+            pixel_lat = f"{data['pixel_lat']:.5f}"
+            pixel_lon = f"{data['pixel_lon']:.5f}"
 
-        st.markdown(
-            '<div class="card">'
-            f'<div class="card-title">{t("home.map_title")}</div>'
-            '<div class="legend-row">'
-            '<span><span class="legend-dot" style="background:#3a7ca5;"></span>'
-            f'{t("home.map_legend_input").format(lat=input_lat, lon=input_lon)}</span>'
-            '<span><span class="legend-dot" style="background:#c0392b;"></span>'
-            f'{t("home.map_legend_pixel").format(lat=pixel_lat, lon=pixel_lon)}</span>'
-            '</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-
-        map_df = pd.DataFrame([
-            {"lat": data["lat"], "lon": data["lon"], "point_type": t("map.tooltip_input")},
-            {"lat": data["pixel_lat"], "lon": data["pixel_lon"], "point_type": t("map.tooltip_pixel")},
-        ])
-
-        st.pydeck_chart(
-            pdk.Deck(
-                layers=[
-                    pdk.Layer(
-                        "ScatterplotLayer",
-                        data=map_df[map_df["point_type"] == t("map.tooltip_input")],
-                        get_position="[lon, lat]",
-                        get_fill_color=[58, 124, 165, 210],
-                        get_radius=80,
-                        pickable=True,
-                    ),
-                    pdk.Layer(
-                        "ScatterplotLayer",
-                        data=map_df[map_df["point_type"] == t("map.tooltip_pixel")],
-                        get_position="[lon, lat]",
-                        get_fill_color=[192, 57, 43, 210],
-                        get_radius=80,
-                        pickable=True,
-                    ),
-                ],
-                initial_view_state=pdk.ViewState(
-                    latitude=(data["lat"] + data["pixel_lat"]) / 2,
-                    longitude=(data["lon"] + data["pixel_lon"]) / 2,
-                    zoom=11,
-                    pitch=0,
-                ),
-                tooltip={"text": "{point_type}\n({lat}, {lon})"},
-                map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+            st.markdown(
+                '<div class="card">'
+                f'<div class="card-title">{t("home.map_title")}</div>'
+                '<div class="legend-row">'
+                '<span><span class="legend-dot" style="background:#3a7ca5;"></span>'
+                f'{t("home.map_legend_input").format(lat=input_lat, lon=input_lon)}</span>'
+                '<span><span class="legend-dot" style="background:#c0392b;"></span>'
+                f'{t("home.map_legend_pixel").format(lat=pixel_lat, lon=pixel_lon)}</span>'
+                '</div>'
+                '</div>',
+                unsafe_allow_html=True,
             )
-        )
 
-    except Exception as e:
-        st.error(t("error.processing_coordinates"))
-        st.exception(e)
+            map_df = pd.DataFrame([
+                {"lat": data["lat"], "lon": data["lon"], "point_type": t("map.tooltip_input")},
+                {"lat": data["pixel_lat"], "lon": data["pixel_lon"], "point_type": t("map.tooltip_pixel")},
+            ])
+
+            st.pydeck_chart(
+                pdk.Deck(
+                    layers=[
+                        pdk.Layer(
+                            "ScatterplotLayer",
+                            data=map_df[map_df["point_type"] == t("map.tooltip_input")],
+                            get_position="[lon, lat]",
+                            get_fill_color=[58, 124, 165, 210],
+                            get_radius=80,
+                            pickable=True,
+                        ),
+                        pdk.Layer(
+                            "ScatterplotLayer",
+                            data=map_df[map_df["point_type"] == t("map.tooltip_pixel")],
+                            get_position="[lon, lat]",
+                            get_fill_color=[192, 57, 43, 210],
+                            get_radius=80,
+                            pickable=True,
+                        ),
+                    ],
+                    initial_view_state=pdk.ViewState(
+                        latitude=(data["lat"] + data["pixel_lat"]) / 2,
+                        longitude=(data["lon"] + data["pixel_lon"]) / 2,
+                        zoom=11,
+                        pitch=0,
+                    ),
+                    tooltip={"text": "{point_type}\n({lat}, {lon})"},
+                    map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+                )
+            )
+
+        except Exception as e:
+            st.error(t("error.processing_coordinates"))
+            st.exception(e)
 
 resources_button("resources_from_home_btn")
 def render_ndvi():
