@@ -1015,5 +1015,9 @@ def get_ndvi_page():
 def get_air_quality_page():
     return air_quality_page
 
+def get_resources_page():
+    return resources_page
+
+
 pg = st.navigation([home_page, ndvi_page, air_quality_page, resources_page])
 pg.run()
