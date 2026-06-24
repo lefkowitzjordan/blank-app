@@ -99,7 +99,7 @@ TRANSLATIONS = {
         "air.pm25_cancer_p1": "Increased PM2.5 values were found to independently predict a decrease in breast cancer survival. This pattern was tracked to have an increased hazard ratio (an indication of risk) by 1.144 per 1 µg/m³ increase of PM2.5 concentration. These effects are especially pronounced for older patients (65 years or older) as well as those in earlier stages of cancer diagnosis (stages I and II).",
         "air.pm25_cancer_p2": "Another study found that PM2.5 levels have a drastic effect on the incidence (aka development) of all gastrointestinal (GI) cancers. Specifically, the adjusted hazard ratio for a 1 standard deviation increase in PM2.5 mass is 1.367 for all GI cancers.",
         "air.pm25_cancer_p3": "The most studied cancer with relation to PM2.5 is lung cancer, as PM2.5 enters the body through the lungs.",
-        "air.pm25_cancer_p4": "One study found that a 10 µg/m³ increase in PM2.5 related to a 7.95% increase in lung cancer mortality, with more significant effects on men and older folks (65 years or older).",
+        "air.pm25_cancer_p4": "found that a 10 µg/m³ increase in PM2.5 related to a 7.95% increase in lung cancer mortality, with more significant effects on men and older folks (65 years or older).",
         "air.pm25_research_intro": "To learn more about lung cancer and PM2.5, check out some other relevant studies on:",
         "air.pm25_long_link_text": "Long-term PM2.5 exposure in U.S. adults",
         "air.pm25_cause_link_text": "How PM2.5 causes lung cancer",
@@ -210,7 +210,7 @@ TRANSLATIONS = {
         "air.pm25_cancer_p1": "Se ha encontrado que niveles más altos de PM2.5 pueden predecir de manera independiente una menor supervivencia en pacientes con cáncer de mama. Los investigadores observaron que por cada aumento de 1 µg/m³ en la concentración de PM2.5, el índice de riesgo (hazard ratio) aumentaba a 1.144, lo que indica un mayor riesgo de mortalidad. Estos efectos fueron especialmente marcados en pacientes mayores de 65 años y en aquellas personas diagnosticadas en etapas tempranas del cáncer (estadios I y II).",
         "air.pm25_cancer_p2": "Otro estudio encontró que los niveles de PM2.5 tienen un efecto importante sobre la incidencia (es decir, el desarrollo) de los cánceres gastrointestinales (GI). En particular, el índice de riesgo ajustado para un aumento de una desviación estándar en la concentración de PM2.5 fue de 1.367 para el conjunto de los cánceres gastrointestinales.",
         "air.pm25_cancer_p3": "El cáncer más estudiado en relación con el PM2.5 es el cáncer de pulmón, ya que estas partículas ingresan al organismo a través de los pulmones.",
-        "air.pm25_cancer_p4": "Un estudio encontró que un aumento de 10 µg/m³ en la concentración de PM2.5 se asoció con un incremento del 7.95 % en la mortalidad por cáncer de pulmón. Los efectos fueron aún más significativos en hombres y en personas mayores de 65 años.",
+        "air.pm25_cancer_p4": "encontró que un aumento de 10 µg/m³ en la concentración de PM2.5 se asoció con un incremento del 7.95 % en la mortalidad por cáncer de pulmón. Los efectos fueron aún más significativos en hombres y en personas mayores de 65 años.",
         "air.pm25_research_intro": "Para obtener más información sobre el cáncer de pulmón y el PM2.5, consulte algunos estudios relacionados sobre:",
         "air.pm25_long_link_text": "Exposición a largo plazo al PM2.5 en adultos de Estados Unidos",
         "air.pm25_cause_link_text": "Cómo el PM2.5 causa cáncer de pulmón",
@@ -973,7 +973,7 @@ def render_ndvi():
     )
 
     learn_link = link(
-        "https://link-springer-com.libproxy2.usc.edu/content/pdf/10.1007/s11356-023-28461-5.pdf",
+        "https://pubmed.ncbi.nlm.nih.gov/37474858/",
         t("ndvi.learn_more_link_text"),
         "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;",
     )
@@ -1024,7 +1024,7 @@ def render_air_quality():
         f'<div class="card-title">{t("air.ozone_cancer_title")}</div>'
         f'<p style="font-size:0.95rem;line-height:1.7;color:#1e2d1f;margin:0;">{t("air.ozone_cancer_p1")}<br><br>{t("air.ozone_cancer_p2")}<br><br>{t("air.ozone_cancer_p3")}<br><br>{t("air.ozone_research_intro")}<br>'
         f'&bull; {link("https://www.nature.com/articles/s41370-019-0135-4", t("air.ozone_long_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}<br>'
-        f'&bull; {link("https://onlinelibrary-wiley-com.libproxy1.usc.edu/doi/full/10.1002/ijc.35069", t("air.ozone_short_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}<br>'
+        f'&bull; {link("https://pubmed.ncbi.nlm.nih.gov/38985095/", t("air.ozone_short_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}<br>'
         f'&bull; {link("https://ascopost.com/news/january-2026/associations-found-between-air-pollutants-and-lung-cancer-subtypes/", t("air.ozone_air_pollution_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}'
         '</p>'
         '</div>',
@@ -1052,12 +1052,12 @@ def render_air_quality():
         f'{t("air.pm25_cancer_p1")}<br><br>'
         f'{t("air.pm25_cancer_p2")}<br><br>'
         f'{t("air.pm25_cancer_p3")} '
-        f'{link("https://oce-ovid-com.libproxy1.usc.edu/article/00008469-202211000-00006/PDF", t("air.pm25_lung_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}.<br><br>'
+        f'{link("https://oce-ovid-com.libproxy1.usc.edu/article/00008469-202211000-00006/PDF", t("air.pm25_lung_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")} '
         f'{t("air.pm25_cancer_p4")}<br><br>'
         f'{t("air.pm25_research_intro")}<br>'
         f'&bull; {link("https://pmc.ncbi.nlm.nih.gov/articles/PMC6915823/pdf/kwx166.pdf", t("air.pm25_long_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}<br>'
-        f'&bull; {link("https://onlinelibrary-wiley-com.libproxy1.usc.edu/doi/full/10.1002/tox.22437", t("air.pm25_cause_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}<br>'
-        f'&bull; {link("https://www-sciencedirect-com.libproxy1.usc.edu/science/article/pii/S0048969717317643", t("air.pm25_male_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}<br>'
+        f'&bull; {link("https://pubmed.ncbi.nlm.nih.gov/28846189/", t("air.pm25_cause_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}<br>'
+        f'&bull; {link("https://pubmed.ncbi.nlm.nih.gov/28724219/", t("air.pm25_male_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}<br>'
         f'&bull; {link("https://www.proquest.com/docview/3307473046?accountid=14749&parentSessionId=ebTcDAjx0wcSqNJ6ZPbbZyurTyde0SdRnOJayaC237A%3D&pq-origsite=primo&sourcetype=Scholarly%20Journals", t("air.pm25_ecology_link_text"), "color:#4a7c59;font-weight:600;text-decoration:underline;text-underline-offset:3px;")}'
         '</p>'
         '</div>',
